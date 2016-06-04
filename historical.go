@@ -15,7 +15,12 @@ import (
 const (
 	StartState = iota
 	ParseHistoryState
-	DisplayHistoryState
+	QueryUserState
+	MainMenuState
+	SelectMenuState
+	GenerateMenuState
+	IncrementCursorState
+	DecrementCursorState
 	FinishedState
 )
 
@@ -63,47 +68,176 @@ func ParseHistory(history string) (*Commands, error) {
 	return &commands, nil
 }
 
-func DisplayHistoryPage(cmds *Commands, start, stop int) int {
-	for ; start < stop; start++ {
-		cmd := (*cmds)[start]
-		fmt.Printf(UnselectedCmdStrFmt, cmd.Number, cmd.CmdString)
+/*
+ Here are the basics:
+ 1. A main display: listing partial content of the script to generate or nothing / placeholder and then the list of options from Here
+
+ e.g.
+
+    [  No commands selected yet ]
+
+*** Commands ***
+    1: preview    2: generate            3: select commands
+    4: restart    5: edit selections     6: quit
+
+2. select menu
+
+1.) command 1
+2.) command 2
+3.) command 3
+Showing: 3/3 commands: <-previous, ->next
+Select>>3,1-2
+
+1.) command 1
+2.) command 2
+3.) command 3
+Showing: 3/3 commands: <-previous, ->next
+Select>>3,1-2
+
+3. selected menu - highlighted what was selected
+
+1.) command 1
+2.) command 2
+3.) command 3
+Showing: 3/3 commands: <-previous, ->next, main menu
+Select>>
+
+4. main menu after selections
+
+    [ 3 commands selected ]
+
+*** Commands ***
+    1: preview    2: generate            3: select commands
+    4: restart    5: edit selections     6: quit
+
+5. generate menu
+    [ 3 commands selected ]
+
+Name>>myNewScript
+
+After inputing a name, the file is saved, and the user is taken back to the main menu with a status
+
+6. main menu after generation
+
+Last Generated during session: myNewscript
+
+    [ No commands selected yet ]
+
+*** Commands ***
+    1: preview    2: generate            3: select commands
+    4: restart    5: edit selections     6: quit
+*/
+
+func DisplayMainMenu(selections *[]Command) {
+	numberOfCurrentSelections := len(*selections)
+	if numberOfCurrentSelections == 0 {
+		fmt.Println("[ No commands selected ]")
+	} else {
+		fmt.Printf("[ %d commands selected ]", numberOfCurrentSelections)
 	}
-	return stop
+
+	commands := "*** Commands ***\n\t1: preview\t2: generate\t3: select commands\n\t4: restart\t5: edit script\t6: quit"
+	fmt.Println(commands)
 }
 
-func ParseCommandSelection() {}
-func WriteScript()           {}
-func CreateScript()          {}
+func DisplaySelectMenu(s *bufio.Scanner, cursor *int, commands *Commands, selections *[]Command) {
+	options := "Commands:\t1: previous\t2: next\t3: main menu\t4: quit\n"
+	prompt := "Select>>"
+	HistoryPage(commands, *cursor, pageLengths)
+	fmt.Printf(options)
+	fmt.Printf(prompt)
+	_ = s.Scan()
+}
+
+func ParseSelectQuery(s *bufio.Scanner, commands *Commands, selections *[]Command) int {
+	switch s.Text() {
+	case "p":
+		return DecrementCursorState
+	case "n":
+		return IncrementCursorState
+	case "m":
+		return SelectMenuState
+	case "q":
+		return FinishedState
+	}
+	// Parse the integers provided: comma separated, hyphen separated, mixture
+	// Update selections
+	return FinishedState
+}
+
+func HistoryPage(cmds *Commands, start, stop int) {
+	i := start
+	for ; i < len(*cmds) && i < start+stop; i++ {
+		cmd := (*cmds)[i]
+		if cmd.Selected {
+			fmt.Printf(SelectedCmdStrFmt, cmd.Number, cmd.CmdString)
+		} else {
+			fmt.Printf(UnselectedCmdStrFmt, cmd.Number, cmd.CmdString)
+		}
+	}
+}
+
+func ParseQuery(s *bufio.Scanner) int {
+	switch s.Text() {
+	case "1", "p":
+		return FinishedState
+	case "2", "g":
+		return FinishedState
+	case "3", "s":
+		return SelectMenuState
+	case "4", "r":
+		return FinishedState
+	case "5", "e":
+		return FinishedState
+	case "6", "q":
+		return FinishedState
+	}
+	return FinishedState
+}
 
 func main() {
 	// parse a flag for silent execution, skip this step
-	fmt.Println("Welcome to historical, where you can manipulate the past to make your future more productive!")
-	fmt.Println("Shall we proceed?")
-	state := ParseHistoryState
+	state := MainMenuState
 	scanner := bufio.NewScanner(os.Stdin)
-	_ = scanner.Scan()
-	if scanner.Text() == "n" {
-		state = FinishedState
-	}
+
 	var commands *Commands
+	selections := []Command{}
+	out, err := exec.Command("bash", "-i", "-c", "history -r; history").Output()
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	commands, err = ParseHistory(string(out))
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	fmt.Printf("Parsed %d commands from history\n", len(*commands))
+	cursor := 0
 	for state != FinishedState {
 		switch state {
-		case ParseHistoryState:
-			out, err := exec.Command("bash", "-i", "-c", "history -r; history").Output()
-			if err != nil {
-				log.Fatal(err)
-				os.Exit(1)
+		case MainMenuState:
+			DisplayMainMenu(&selections)
+			state = QueryUserState
+		case QueryUserState:
+			fmt.Print("Select>>")
+			_ = scanner.Scan()
+			state = ParseQuery(scanner)
+		case SelectMenuState:
+			DisplaySelectMenu(scanner, &cursor, commands, &selections)
+			state = ParseSelectQuery(scanner, commands, &selections)
+		case DecrementCursorState:
+			cursor -= pageLengths
+			if cursor < 0 {
+				cursor = 0
 			}
-			commands, err = ParseHistory(string(out))
-			if err != nil {
-				log.Fatal(err)
-				os.Exit(1)
+			state = SelectMenuState
+		case IncrementCursorState:
+			cursor += pageLengths
+			if cursor > len(*commands) {
+				cursor = len(*commands) - pageLengths
 			}
-			fmt.Printf("Parsed %d commands from history\n", len(*commands))
-			state = DisplayHistoryState
-		case DisplayHistoryState:
-			DisplayHistoryPage(commands, 0, 25)
-			state = FinishedState
+			state = SelectMenuState
 		}
 	}
 }
