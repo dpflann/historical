@@ -150,7 +150,8 @@ func DisplaySelectMenu(s *bufio.Scanner, cursor *int, commands *Commands, select
 }
 
 func ParseSelectQuery(s *bufio.Scanner, commands *Commands, selections *[]Command) int {
-	switch s.Text() {
+	input := s.Text()
+	switch input {
 	case "p":
 		return DecrementCursorState
 	case "n":
@@ -161,8 +162,30 @@ func ParseSelectQuery(s *bufio.Scanner, commands *Commands, selections *[]Comman
 		return FinishedState
 	}
 	// Parse the integers provided: comma separated, hyphen separated, mixture
+	selectedCommands := ParseSelection(input)
+	fmt.Println("Selections!")
+	fmt.Println(selectedCommands)
 	// Update selections
 	return FinishedState
+}
+
+func ParseSelection(selection string) []int {
+	selections := []int{}
+	commaDelimited := strings.Split(selection, ",")
+	for _, s := range commaDelimited {
+		if strings.Contains(s, "-") {
+			hyphenDelimited := strings.Split(s, "-")
+			min, _ := strconv.Atoi(hyphenDelimited[0])
+			max, _ := strconv.Atoi(hyphenDelimited[1])
+			for i := min; i <= max; i++ {
+				selections = append(selections, i)
+			}
+		} else {
+			n, _ := strconv.Atoi(s)
+			selections = append(selections, n)
+		}
+	}
+	return selections
 }
 
 func HistoryPage(cmds *Commands, start, stop int) {
