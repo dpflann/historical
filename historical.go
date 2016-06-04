@@ -165,8 +165,11 @@ func ParseSelectQuery(s *bufio.Scanner, commands *Commands, selections *[]Comman
 	selectedCommands := ParseSelection(input)
 	fmt.Println("Selections!")
 	fmt.Println(selectedCommands)
+	for _, n := range selectedCommands {
+		(*commands)[n-1].Selected = !(*commands)[n-1].Selected
+	}
 	// Update selections
-	return FinishedState
+	return SelectMenuState
 }
 
 func ParseSelection(selection string) []int {
